@@ -123,7 +123,7 @@ int main(void) {
               fish[i].width = (type == 0) ? G61_WIDTH : G77_WIDTH;
               fish[i].x = BOUND_LEFT + randRange(BOUND_RIGHT - BOUND_LEFT - fish[i].width);
               fish[i].y = BOUND_TOP + randRange(BOUND_BOTTOM - BOUND_TOP - 32);
-              fish[i].dx = -(1 + randRange(2));
+              fish[i].dx = -(1 + randRange(4));
               fishTemp.nb_Image = (WORD *)((type == 0) ? g61_get_plane(1) : g77_get_plane(1));
               fishTemp.nb_WordWidth = fish[i].width / 16;
               fishTemp.nb_LineHeight = (type == 0) ? G61_HEIGHT : G77_HEIGHT;
@@ -162,6 +162,7 @@ int main(void) {
                 if (fish[j].x < BOUND_LEFT - fish[j].width) {
                   fish[j].x = BOUND_RIGHT;
                   fish[j].y = BOUND_TOP + randRange(BOUND_BOTTOM - BOUND_TOP - 32);
+                  fish[j].dx = -(1 + randRange(4)); // Nová náhodná rychlost pro další plavbu
                 }
                 fish[j].bob->BobVSprite->X = fish[j].x;
                 fish[j].bob->BobVSprite->Y = fish[j].y;
