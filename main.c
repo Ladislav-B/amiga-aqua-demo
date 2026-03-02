@@ -20,6 +20,7 @@ vc +aos68k .\main.c animtools/animtools.c random.c -o a.exe -lamiga
 #include "bubble_sprite.h"
 #include "ryba1_sprite.h"
 #include "ryba2_sprite.h"
+#include "ryba3_sprite.h"
 #include "animtools/animtools.h"
 #include "animtools/animtools_proto.h"
 
@@ -53,7 +54,7 @@ struct Bubble {
 };
 struct Bubble bubbles[NUM_BUBBLES];
 
-#define NUM_FISH 4
+#define NUM_FISH 5
 struct Fish {
     struct Bob *bob;
     WORD x, y;
@@ -119,15 +120,27 @@ int main(void) {
             // --- Ryby (bez SAVEBACK, PlaneOnOff pro oranžovou) ---
             NEWBOB fishTemp = { NULL, 0, 0, 0, 0x07, 0x08, OVERLAY, 0, SCREEN_DEPTH, 0, 0, 0, 0 };
             for (int i = 0; i < NUM_FISH; i++) {
-              int type = i % 2;
-              fish[i].width = (type == 0) ? G61_WIDTH : G77_WIDTH;
-              fish[i].x = BOUND_LEFT + randRange(BOUND_RIGHT - BOUND_LEFT - fish[i].width);
-              fish[i].y = BOUND_TOP + randRange(BOUND_BOTTOM - BOUND_TOP - 32);
-              fish[i].dx = -(1 + randRange(4));
-              fishTemp.nb_Image = (WORD *)((type == 0) ? g61_get_plane(1) : g77_get_plane(1));
-              fishTemp.nb_WordWidth = fish[i].width / 16;
-              fishTemp.nb_LineHeight = (type == 0) ? G61_HEIGHT : G77_HEIGHT;
-              fishTemp.nb_ImageDepth = (type == 0) ? G61_DEPTH : G77_DEPTH;
+              if (i < 4) {
+                int type = i % 2;
+                fish[i].width = (type == 0) ? G61_WIDTH : G77_WIDTH;
+                fish[i].x = BOUND_LEFT + randRange(BOUND_RIGHT - BOUND_LEFT - fish[i].width);
+                fish[i].y = BOUND_TOP + randRange(BOUND_BOTTOM - BOUND_TOP - 32);
+                fish[i].dx = -(1 + randRange(4));
+                fishTemp.nb_Image = (WORD *)((type == 0) ? g61_get_plane(1) : g77_get_plane(1));
+                fishTemp.nb_WordWidth = fish[i].width / 16;
+                fishTemp.nb_LineHeight = (type == 0) ? G61_HEIGHT : G77_HEIGHT;
+                fishTemp.nb_ImageDepth = (type == 0) ? G61_DEPTH : G77_DEPTH;
+              } else {
+                // Pátá ryba (ryba3_sprite.h - G88) pluje zleva doprava
+                fish[i].width = G88_WIDTH;
+                fish[i].x = BOUND_LEFT;
+                fish[i].y = BOUND_TOP + randRange(BOUND_BOTTOM - BOUND_TOP - 32);
+                fish[i].dx = (1 + randRange(4));
+                fishTemp.nb_Image = (WORD *)g88_get_plane(1);
+                fishTemp.nb_WordWidth = G88_WIDTH / 16;
+                fishTemp.nb_LineHeight = G88_HEIGHT;
+                fishTemp.nb_ImageDepth = G88_DEPTH;
+              }
               fishTemp.nb_X = fish[i].x; fishTemp.nb_Y = fish[i].y;
               fish[i].bob = makeBob(&fishTemp);
               if (fish[i].bob) AddBob(fish[i].bob, &db->screen->RastPort);
@@ -159,10 +172,21 @@ int main(void) {
               // 3. Pohyb Ryb
               for (int j = 0; j < NUM_FISH; j++) {
                 fish[j].x += fish[j].dx;
-                if (fish[j].x < BOUND_LEFT - fish[j].width) {
-                  fish[j].x = BOUND_RIGHT;
-                  fish[j].y = BOUND_TOP + randRange(BOUND_BOTTOM - BOUND_TOP - 32);
-                  fish[j].dx = -(1 + randRange(4)); // Nová náhodná rychlost pro další plavbu
+                
+                if (fish[j].dx < 0) {
+                  // Plave doleva
+                  if (fish[j].x < BOUND_LEFT - fish[j].width) {
+                    fish[j].x = BOUND_RIGHT;
+                    fish[j].y = BOUND_TOP + randRange(BOUND_BOTTOM - BOUND_TOP - 32);
+                    fish[j].dx = -(1 + randRange(4));
+                  }
+                } else {
+                  // Plave doprava (naše nová rybka)
+                  if (fish[j].x > BOUND_RIGHT) {
+                    fish[j].x = BOUND_LEFT - fish[j].width;
+                    fish[j].y = BOUND_TOP + randRange(BOUND_BOTTOM - BOUND_TOP - 32);
+                    fish[j].dx = (1 + randRange(4));
+                  }
                 }
                 fish[j].bob->BobVSprite->X = fish[j].x;
                 fish[j].bob->BobVSprite->Y = fish[j].y;
