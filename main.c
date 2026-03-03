@@ -1,6 +1,6 @@
 /*
-Vykreslí podmořský svět s hlubokomořským gradientem a inteligentním hejnem ryb.
-vc +aos68k .\main.c more_copper.c flocking.c fish.c animtools/animtools.c random.c -o a.exe -lamiga
+Vykreslí podmořský svět s hlubokomořským gradientem, inteligentním hejnem ryb a žralokem.
+vc +aos68k .\main.c more_copper.c flocking.c fish.c zralok.c animtools/animtools.c random.c -o a.exe -lamiga
 */
 
 #include <proto/exec.h>
@@ -21,6 +21,7 @@ vc +aos68k .\main.c more_copper.c flocking.c fish.c animtools/animtools.c random
 #include "more_copper.h"
 #include "flocking.h"
 #include "fish.h"
+#include "zralok.h"
 
 struct IntuitionBase *IntuitionBase=NULL;
 struct DosBase *DosBase=NULL;
@@ -47,7 +48,8 @@ volatile struct Custom *custom_ptr = (struct Custom *)0xDFF000;
 #define NUM_BUBBLES 20
 struct Bubble { struct Bob *bob; WORD x, y, dy; } bubbles[NUM_BUBBLES];
 
-struct Fish fish[NUM_FISH]; /* Definováno v fish.h */
+struct Fish fish[NUM_FISH];
+struct Shark shark;
 
 struct GelsInfo *gelsInfo;
 UWORD pens[]={~0};
@@ -98,45 +100,50 @@ int main(void) {
               bubbles[i].bob = makeBob(&bTemp); if (bubbles[i].bob) AddBob(bubbles[i].bob, &db->screen->RastPort);
             }
 
-            // --- Ryby (S inteligentním hejnem a zrcadlením) ---
-            if (init_fish_squad(fish, &db->screen->RastPort)) {
+            // --- Ryby (S inteligentním hejnem) ---
+            init_fish_squad(fish, &db->screen->RastPort);
+            
+            // --- ŽRALOK (Náš nový predátor) ---
+            init_shark(&shark, &db->screen->RastPort);
 
-              // Prvotní aktivace Copperu a displaye
-              MakeScreen(db->screen); RethinkDisplay();
+            MakeScreen(db->screen); RethinkDisplay();
 
-              int front=0;
-              while ((*((volatile UBYTE *)0xbfe001) & 0x40)) {
-                int back = 1 - front;
-                struct RastPort rp; InitRastPort(&rp); rp.BitMap = db->bitmaps[back]; rp.GelsInfo = gelsInfo;
+            int front=0;
+            while ((*((volatile UBYTE *)0xbfe001) & 0x40)) {
+              int back = 1 - front;
+              struct RastPort rp; InitRastPort(&rp); rp.BitMap = db->bitmaps[back]; rp.GelsInfo = gelsInfo;
 
-                BltBitMap(db->bgBitMap, 0, 0, db->bitmaps[back], 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0xC0, 0xFF, NULL);
-                WaitBlit();
+              BltBitMap(db->bgBitMap, 0, 0, db->bitmaps[back], 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0xC0, 0xFF, NULL);
+              WaitBlit();
 
-                // 1. Bubliny
-                for (int j=0; j<NUM_BUBBLES; j++) {
-                  bubbles[j].y += bubbles[j].dy; bubbles[j].x += randRange(5)-2;
-                  if (bubbles[j].y < BOUND_TOP) { bubbles[j].y = BOUND_BOTTOM-5; bubbles[j].x = BOUND_LEFT + randRange(BOUND_RIGHT-BOUND_LEFT-BUBBLE_WIDTH); }
-                  bubbles[j].bob->BobVSprite->X = bubbles[j].x; bubbles[j].bob->BobVSprite->Y = bubbles[j].y;
-                }
-                
-                // 2. Hejno ryb
-                update_flocking(fish, NUM_FISH);
-                update_fish_orientation(fish); /* Kouzlo správného směru! */
-
-                SortGList(&db->screen->RastPort); DrawGList(&rp, &db->screen->ViewPort);
-                BltBitMap(db->bgBitMap, 0, 0, db->bitmaps[back], 0, 0, SCREEN_WIDTH, BOUND_TOP, 0xC0, 0xFF, NULL);
-                BltBitMap(db->bgBitMap, 0, BOUND_BOTTOM, db->bitmaps[back], 0, BOUND_BOTTOM, SCREEN_WIDTH, SCREEN_HEIGHT-BOUND_BOTTOM, 0xC0, 0xFF, NULL);
-                BltBitMap(db->bgBitMap, 0, BOUND_TOP, db->bitmaps[back], 0, BOUND_TOP, BOUND_LEFT, BOUND_BOTTOM - BOUND_TOP, 0xC0, 0xFF, NULL);
-                BltBitMap(db->bgBitMap, BOUND_RIGHT, BOUND_TOP, db->bitmaps[back], BOUND_RIGHT, BOUND_TOP, SCREEN_WIDTH - BOUND_RIGHT, BOUND_BOTTOM - BOUND_TOP, 0xC0, 0xFF, NULL);
-                WaitBlit();
-
-                WaitTOF();
-                db->screen->ViewPort.RasInfo->BitMap = db->bitmaps[back];
-                front = back;
-                ScrollVPort(&db->screen->ViewPort);
+              // 1. Bubliny
+              for (int j=0; j<NUM_BUBBLES; j++) {
+                bubbles[j].y += bubbles[j].dy; bubbles[j].x += randRange(5)-2;
+                if (bubbles[j].y < BOUND_TOP) { bubbles[j].y = BOUND_BOTTOM-5; bubbles[j].x = BOUND_LEFT + randRange(BOUND_RIGHT-BOUND_LEFT-BUBBLE_WIDTH); }
+                bubbles[j].bob->BobVSprite->X = bubbles[j].x; bubbles[j].bob->BobVSprite->Y = bubbles[j].y;
               }
+              
+              // 2. Žralok
+              update_shark(&shark, &db->screen->RastPort);
+
+              // 3. Hejno ryb (Reagují na žraloka!)
+              update_flocking(fish, NUM_FISH, shark.x, shark.y);
+              update_fish_orientation(fish);
+
+              SortGList(&db->screen->RastPort); DrawGList(&rp, &db->screen->ViewPort);
+              BltBitMap(db->bgBitMap, 0, 0, db->bitmaps[back], 0, 0, SCREEN_WIDTH, BOUND_TOP, 0xC0, 0xFF, NULL);
+              BltBitMap(db->bgBitMap, 0, BOUND_BOTTOM, db->bitmaps[back], 0, BOUND_BOTTOM, SCREEN_WIDTH, SCREEN_HEIGHT-BOUND_BOTTOM, 0xC0, 0xFF, NULL);
+              BltBitMap(db->bgBitMap, 0, BOUND_TOP, db->bitmaps[back], 0, BOUND_TOP, BOUND_LEFT, BOUND_BOTTOM - BOUND_TOP, 0xC0, 0xFF, NULL);
+              BltBitMap(db->bgBitMap, BOUND_RIGHT, BOUND_TOP, db->bitmaps[back], BOUND_RIGHT, BOUND_TOP, SCREEN_WIDTH - BOUND_RIGHT, BOUND_BOTTOM - BOUND_TOP, 0xC0, 0xFF, NULL);
+              WaitBlit();
+
+              WaitTOF();
+              db->screen->ViewPort.RasInfo->BitMap = db->bitmaps[back];
+              front = back;
+              ScrollVPort(&db->screen->ViewPort);
             }
 
+            cleanup_shark(&shark);
             cleanup_fish_squad(fish);
             for (int i = 0; i < NUM_BUBBLES; i++) { if (bubbles[i].bob) { RemBob(bubbles[i].bob); freeBob(bubbles[i].bob, SCREEN_DEPTH); } }
             cleanupGelSys(gelsInfo, &db->screen->RastPort);

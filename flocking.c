@@ -12,8 +12,9 @@ struct Fish {
 
 #define DIST_MIN 25
 #define DIST_MAX 100
+#define SHARK_FEAR_DIST 150
 
-void update_flocking(struct Fish *fArr, int num_fish) {
+void update_flocking(struct Fish *fArr, int num_fish, WORD shark_x, WORD shark_y) {
     int i, j;
     LONG dist_x, dist_y, dist_sq; /* Musí být LONG! */
     WORD move_x, move_y;
@@ -25,6 +26,17 @@ void update_flocking(struct Fish *fArr, int num_fish) {
         avg_x = 0; avg_y = 0;
         avg_dx = 0; avg_dy = 0;
         neighbors = 0;
+
+        /* 0. STRACH ZE ŽRALOKA */
+        dist_x = (LONG)fArr[i].x - shark_x;
+        dist_y = (LONG)fArr[i].y - shark_y;
+        dist_sq = (dist_x * dist_x) + (dist_y * dist_y);
+        
+        if (dist_sq < (LONG)SHARK_FEAR_DIST * SHARK_FEAR_DIST) {
+            /* Ryba plave RYCHLE pryč od žraloka */
+            move_x += (WORD)dist_x / 2;
+            move_y += (WORD)dist_y / 2;
+        }
 
         for (j = 0; j < num_fish; j++) {
             if (i == j) continue;

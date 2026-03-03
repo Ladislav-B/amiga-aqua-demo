@@ -1,64 +1,52 @@
-# Amiga Akvárium - Tutoriál Grafické Animace
+# Amiga Akvárium - Rozšířený Tutoriál Grafické Animace a AI
 
-Vítejte, udatní programátoři a rytíři kódu! Představuji vám projekt **Amiga Akvárium**, demonstraci plynulé animace a umělé inteligence na platformě Amiga. V tomto projektu ožívají rybky a bubliny v podmořském světě, využívajíce sílu čipsetu OCS/ECS a operačního systému AmigaOS.
+Vítejte v análech projektu **Amiga Akvárium**! Tento projekt je pokročilou ukázkou programování herní grafiky a umělé inteligence pro legendární platformu Amiga (OCS/ECS/AGA). Nyní obsahuje nejen plynulou animaci, ale i komplexní interakce mezi objekty.
 
-## Jak to funguje: Architektura a Magie
+## Architektura a Magie Projektu
 
-Celý projekt je postaven na nízkoúrovňovém přístupu k hardwaru Amigy s využitím systémových knihoven `graphics.library` a `intuition.library`.
+Náš podmořský svět je rozdělen do několika rytířských svitků, z nichž každý má svou nezastupitelnou roli:
 
-### 1. Copper: Magie Barevného Gradientu
+### 1. Srdce Programu (`main.c`)
+Zde bije srdce celého akvária. Hlavní smyčka synchronizuje všechny součásti, zajišťuje double buffering pomocí `ScrollVPort` a stará se o správné pořadí vykreslování (obnova pozadí -> pohyb objektů -> Gels vykreslení -> clipping).
 
-Pro efekt hlubokého moře využíváme koprocesor **Copper**. Ten mění barvu pozadí (index 0) přímo během vykreslování řádků.
-*   **Implementace:** V `more_copper.c` vytváříme `UCopList` s 8 odstíny modré.
-*   **Výhoda:** Plynulý barevný přechod bez jakéhokoliv zatížení hlavního procesoru (CPU).
+### 2. Správa Ryb a Zrcadlení (`fish.c`, `fish.h`)
+Tato část se stará o naše ryby. 
+*   **Dynamické Otáčení:** Aby ryby necouvaly, systém podle směru pohybu (`dx`) přepíná grafiku mezi `g77` (doleva) a `g88` (doprava).
+*   **Stabilita Gels:** Protože systém Bobů je citlivý na změny ukazatelů, používáme metodu `CopyMem` pro aktualizaci masky (`ImageShadow`) v existujícím bufferu.
 
-### 2. Inteligentní Hejno (Flocking / Boids)
+### 3. Inteligentní Hejno (`flocking.c`, `flocking.h`)
+Implementace algoritmu **Boids**. Ryby se řídí pravidly separace, soudržnosti a zarovnání. 
+*   **Faktor Strachu:** Ryby vnímají pozici žraloka. Pokud se přiblíží, aktivuje se čtvrté pravidlo - **útěk (fleeing)**, kdy ryby zmateně prchají od predátora.
+*   **Celočíselná Matematika:** Všechny výpočty jsou prováděny v 32-bitových celých číslech (`LONG`), což zajišťuje rychlost i prevenci přetečení (overflow).
 
-Ryby se nepohybují náhodně, ale jako společenstvo řízené algoritmem **Boids** (podle Craiga Reynoldse). Každá ryba se rozhoduje na základě tří rytířských pravidel:
+### 4. Predátor Žralok (`zralok.c`, `zralok.h`)
+Náš nový majestátní obyvatel o rozměrech 64x32 pixelů. 
+*   **Generování Masky:** Protože data žraloka nemají vlastní masku, program ji při startu automaticky vygeneruje (pomocí operace OR přes všechny tři barevné roviny). To zajišťuje jeho správnou průhlednost nad pozadím.
 
-1.  **Separace (Separation):** Ryba se snaží udržovat bezpečný rozestup od svých sousedů, aby nedošlo ke srážce.
-2.  **Soudržnost (Cohesion):** Ryba je přitahována ke středu hejna, aby družina zůstala pohromadě.
-3.  **Zarovnání (Alignment):** Ryba se snaží sjednotit svůj směr a rychlost s ostatními v hejnu.
+### 5. Barevná Hloubka (`more_copper.c`, `more_copper.h`)
+Využívá koprocesor **Copper** k vytvoření plynulého osmibarevného modrého gradientu v pozadí. Toto kouzlo nezabírá žádný čas procesoru.
 
-**Technické detaily implementace:**
-*   **Celočíselná matematika:** Aby procesor 68000 neztrácel dech, nepoužíváme čísla s plovoucí čárkou (floats), ale čistou celočíselnou aritmetiku.
-*   **Prevence přetečení (Overflow):** Výpočty vzdáleností provádíme pomocí 32-bitových čísel (`LONG`). Při použití 16-bitových čísel by při větších vzdálenostech došlo k přetečení, což by vedlo k "šílenému" chování ryb a zamrznutí systému.
-*   **Odrazy:** Pokud ryba narazí na hranici akvária, je jemně odražena zpět do středu dění.
+### 6. Náhodná Čísla a Nástroje (`random.c`, `animtools/`)
+Zajišťují přirozenou variabilitu pohybu a poskytují nízkoúrovňové funkce pro práci se systémem Gels (Boby).
 
-### 3. Dynamické Otáčení a Správa Bobů
+## Datové Svitky (Grafika)
+*   `ryba2_sprite.h` (`g77`): Ryba koukající doleva.
+*   `ryba3_sprite.h` (`g88`): Ryba koukající doprava.
+*   `zralok_levy.h`, `zralok_pravy.h`: Majestátní grafika našeho predátora.
+*   `bubble_sprite.h`: Data pro bubliny stoupající k hladině.
+*   `background.h`: Statický obraz pozadí akvária.
 
-Naše ryby mají různé grafické předlohy (`g77` kouká doleva, `g88` doprava). Aby ryby při plavbě necouvaly, implementovali jsme systém dynamického přepínání grafiky v `fish.c`.
-
-*   **Prohazování obrazu:** Podle směru pohybu (`dx`) měníme ukazatel `ImageData` ve struktuře `VSprite`.
-*   **Kopírování masky:** Protože systém Gels (Boby) je velmi citlivý na změny ukazatelů masek, nepřenastavujeme ukazatel na masku, ale pomocí `CopyMem` kopírujeme nová data masky do stávajícího bufferu `ImageShadow`. To zaručuje 100% stabilitu bez pádů (Guru Meditation).
-
-### 4. Grafický Systém a Double Buffering
-
-*   **Double Buffering:** Používáme dvě bitmapy. Zatímco se jedna zobrazuje, do druhé Blitter kreslí další snímek. Prohazování provádíme pomocí `ScrollVPort`.
-*   **Obnova Pozadí:** Máme třetí, čistou bitmapu (`bgBitMap`). V každém snímku z ní pomocí Blitteru zkopírujeme čisté pozadí do pracovní bitmapy, čímž "smažeme" ryby z předchozího snímku.
-*   **Gels & BOBs:** Ryby a bubliny jsou vykreslovány jako **Blitter Objects (BOBs)**, což umožňuje hardwarové maskování a plynulé překrývání.
-
-## Struktura Projektu
-
-*   `main.c`: Srdce programu a hlavní smyčka.
-*   `fish.c/h`: Správa ryb, jejich inicializace a otáčení grafiky.
-*   `flocking.c/h`: Inteligence hejna a matematické výpočty pohybu.
-*   `more_copper.c/h`: Kouzlo hlubokomořského gradientu.
-*   `animtools/`: Systémové nástroje pro práci s Gels.
-
-## Sestavení
-
-K sestavení tohoto velkolepého díla použijte kompilátor `vbcc`:
+## Sestavení a Běh
+K vyvolání tohoto kouzla použijte kompilátor `vbcc`:
 
 ```bash
-vc +aos68k .\main.c more_copper.c flocking.c fish.c animtools/animtools.c random.c -o a.exe -lamiga
+vc +aos68k .\main.c more_copper.c flocking.c fish.c zralok.c animtools/animtools.c random.c -o a.exe -lamiga
 ```
 
-## Rytířovy Postřehy
+## Rytířova Poselství
+Nejdůležitějším poznatkem z tohoto questu bylo, že interakce mezi hejnem a predátorem vytváří dynamický a stále se měnící vizuální zážitek. Vždy pamatujte na stabilitu paměti Amigy a k hardware přistupujte s úctou a precizností!
 
-Tento projekt ukazuje, že i na klasickém hardware Amigy lze s trochou matematiky a rytířské trpělivosti vytvořit komplexní a živý svět. Nejdůležitějším ponaučením z tohoto questu bylo: **"Vždy si hlídej své 32-bitové registry při násobení souřadnic!"**
+Ať vaše ryby plují vesele a žralok je vždy sytý (ale ne našimi rybkami)!
 
-Ať vaše ryby plují vesele a vaše Amiga nikdy nezažije Guru Meditation!
-
-*Sepsáno s úctou a úsměvem,*
+*Sepsáno s rytířskou ctí a úsměvem,*
 **Ser Amík z Comodorie**

@@ -19,8 +19,8 @@ struct Fish; // Forward deklarace
 
 /* 
  * Hlavní funkce pro aktualizaci pohybu hejna.
- * Aplikuje pravidla separace, soudržnosti a zarovnání.
+ * Aplikuje pravidla separace, soudržnosti, zarovnání a útěku před žralokem.
  */
-void update_flocking(struct Fish *fish_array, int num_fish);
+void update_flocking(struct Fish *fish_array, int num_fish, WORD shark_x, WORD shark_y);
 
 #endif
