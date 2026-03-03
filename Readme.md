@@ -1,105 +1,64 @@
 # Amiga Akvárium - Tutoriál Grafické Animace
 
-Vítejte, udatní programátoři a rytíři kódu! Představuji vám projekt **Amiga Akvárium**, demonstraci plynulé animace na platformě Amiga. V tomto projektu ožívají rybky a bubliny v podmořském světě, využívajíce sílu čipsetu a operačního systému AmigaOS.
-
-Tento projekt slouží jako **tutoriál** pro ty, kteří chtějí proniknout do tajů programování grafiky v jazyce C na Amize.
+Vítejte, udatní programátoři a rytíři kódu! Představuji vám projekt **Amiga Akvárium**, demonstraci plynulé animace a umělé inteligence na platformě Amiga. V tomto projektu ožívají rybky a bubliny v podmořském světě, využívajíce sílu čipsetu OCS/ECS a operačního systému AmigaOS.
 
 ## Jak to funguje: Architektura a Magie
 
-Celý projekt je postaven na nízkoúrovňovém přístupu k hardwaru Amigy s využitím systémových knihoven `graphics.library` a `intuition.library`. Zde je rozbor klíčových mechanik.
+Celý projekt je postaven na nízkoúrovňovém přístupu k hardwaru Amigy s využitím systémových knihoven `graphics.library` a `intuition.library`.
 
-### 1. Otevření Obrazovky (The Screen)
+### 1. Copper: Magie Barevného Gradientu
 
-Naše dobrodružství začíná otevřením vlastní obrazovky (Custom Screen). Nepoužíváme standardní Workbench, ale vytváříme si vlastní píseček.
+Pro efekt hlubokého moře využíváme koprocesor **Copper**. Ten mění barvu pozadí (index 0) přímo během vykreslování řádků.
+*   **Implementace:** V `more_copper.c` vytváříme `UCopList` s 8 odstíny modré.
+*   **Výhoda:** Plynulý barevný přechod bez jakéhokoliv zatížení hlavního procesoru (CPU).
 
-*   **Funkce:** `OpenScreenTagList` ([Amiga Dev: OpenScreenTagList](http://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_3._guide/node02E6.html))
-*   **Vlastnosti:** Rozlišení 640x256 (HiRes), 4 bitplanes (16 barev).
-*   **Cíl:** Získat pointer na `struct Screen`, který je naším plátnem.
+### 2. Inteligentní Hejno (Flocking / Boids)
 
-### 2. Double Buffering (Dvojitá Vyrovnávací Paměť)
+Ryby se nepohybují náhodně, ale jako společenstvo řízené algoritmem **Boids** (podle Craiga Reynoldse). Každá ryba se rozhoduje na základě tří rytířských pravidel:
 
-Aby byl pohyb rybek plynulý a bez blikání (flickering), používáme techniku **Double Buffering**.
+1.  **Separace (Separation):** Ryba se snaží udržovat bezpečný rozestup od svých sousedů, aby nedošlo ke srážce.
+2.  **Soudržnost (Cohesion):** Ryba je přitahována ke středu hejna, aby družina zůstala pohromadě.
+3.  **Zarovnání (Alignment):** Ryba se snaží sjednotit svůj směr a rychlost s ostatními v hejnu.
 
-*   Máme dvě bitmapy (`BitMap`):
-    *   **Front Buffer:** To, co právě vidí uživatel na monitoru.
-    *   **Back Buffer:** Skrytá bitmapa, do které kreslíme další snímek animace.
-*   Jakmile je vykreslování hotové, prohodíme je pomocí `db->screen->ViewPort.RasInfo->BitMap`.
-*   Tímto způsobem se divák vždy dívá na hotový obrázek, zatímco my "za oponou" připravujeme další.
+**Technické detaily implementace:**
+*   **Celočíselná matematika:** Aby procesor 68000 neztrácel dech, nepoužíváme čísla s plovoucí čárkou (floats), ale čistou celočíselnou aritmetiku.
+*   **Prevence přetečení (Overflow):** Výpočty vzdáleností provádíme pomocí 32-bitových čísel (`LONG`). Při použití 16-bitových čísel by při větších vzdálenostech došlo k přetečení, což by vedlo k "šílenému" chování ryb a zamrznutí systému.
+*   **Odrazy:** Pokud ryba narazí na hranici akvária, je jemně odražena zpět do středu dění.
 
-### 3. Čisté Pozadí a Clipping (Background Restoration)
+### 3. Dynamické Otáčení a Správa Bobů
 
-Zde přichází trik starých mistrů! Máme **třetí bitmapa** (`bgBitMap`), která slouží jako "čistý zdroj" pozadí. Do této bitmapy se **nikdy nekreslí** žádné ryby ani bubliny. Obsahuje pouze statické pozadí akvária.
+Naše ryby mají různé grafické předlohy (`g77` kouká doleva, `g88` doprava). Aby ryby při plavbě necouvaly, implementovali jsme systém dynamického přepínání grafiky v `fish.c`.
 
-V každém snímku (frame) děláme toto:
-1.  **Vymazání stop:** Pomocí `BltBitMap` ([Amiga Dev: BltBitMap](http://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_2._guide/node0334.html)) zkopírujeme čisté pozadí z `bgBitMap` do našeho *Back Bufferu*. Tím efektivně "smažeme" vše, co tam bylo v minulém snímku.
-2.  **Clipping (Ořez):** Po vykreslení ryb znovu použijeme `BltBitMap` k přepsání okrajů obrazovky čistým pozadím. Tím zajistíme, že rybky "zmizí", když vplují mimo vymezenou oblast, aniž bychom museli složitě počítat masky na okrajích.
+*   **Prohazování obrazu:** Podle směru pohybu (`dx`) měníme ukazatel `ImageData` ve struktuře `VSprite`.
+*   **Kopírování masky:** Protože systém Gels (Boby) je velmi citlivý na změny ukazatelů masek, nepřenastavujeme ukazatel na masku, ale pomocí `CopyMem` kopírujeme nová data masky do stávajícího bufferu `ImageShadow`. To zaručuje 100% stabilitu bez pádů (Guru Meditation).
 
-### 4. Gels Systém a BOBs (Blitter Objects)
+### 4. Grafický Systém a Double Buffering
 
-Pro naše ryby a bubliny používáme systém **Gels** (Graphics Elements), konkrétně **BOBs** (Blitter Objects).
+*   **Double Buffering:** Používáme dvě bitmapy. Zatímco se jedna zobrazuje, do druhé Blitter kreslí další snímek. Prohazování provádíme pomocí `ScrollVPort`.
+*   **Obnova Pozadí:** Máme třetí, čistou bitmapu (`bgBitMap`). V každém snímku z ní pomocí Blitteru zkopírujeme čisté pozadí do pracovní bitmapy, čímž "smažeme" ryby z předchozího snímku.
+*   **Gels & BOBs:** Ryby a bubliny jsou vykreslovány jako **Blitter Objects (BOBs)**, což umožňuje hardwarové maskování a plynulé překrývání.
 
-*   **Struktura:** Každá ryba je reprezentována strukturou `struct Bob`.
-*   **Funkce:**
-    *   `makeBob`: Vytvoří BOBa z definice.
-    *   `AddBob`: Přidá BOBa do seznamu k vykreslení pro daný `RastPort`.
-    *   `DrawGList`: Vykreslí všechny aktivní objekty do bufferu pomocí Blitteru ([Amiga Dev: DrawGList](http://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_2._guide/node036D.html)).
+## Struktura Projektu
 
-### 5. Copper: Magie Barevného Gradientu
-
-Pro dosažení efektu hlubokého moře využíváme sílu koprocesoru **Copper**. Ten dokáže měnit barvy palety přímo během vykreslování řádků na monitoru.
-
-*   **Mechanika:** Vytváříme uživatelský Copper list (`UCopList`), který systém automaticky zařadí do hlavního instrukčního toku hardware.
-*   **Implementace:** V souboru `more_copper.c` definujeme 8 odstínů modré barvy pro barevný index 0 (pozadí).
-*   **Funkce:** Používáme instrukce `CWAIT` (počkej na řádek) a `CMOVE` (změň barvu v registru `color[0]`).
-*   **Výsledek:** Plynulý barevný přechod od hladiny až ke dnu, aniž by to zatěžovalo hlavní procesor (CPU).
-
-### 6. Herní Smyčka (Game Loop)
-
-Srdce programu bije ve smyčce `while`.
-
-1.  **Synchronizace:** Čekáme na vertikální paprsek (`WaitTOF`), abychom se synchronizovali s obnovovací frekvencí monitoru (50Hz PAL / 60Hz NTSC).
-2.  **Logika:** Aktualizujeme souřadnice `x, y` ryb a bublin.
-3.  **Vykreslení:** Voláme `DrawGList` pro vykreslení nové polohy do *Back Bufferu*.
-4.  **Prohození:** Prohodíme buffery pomocí `ScrollVPort` nebo `MakeScreen/RethinkDisplay` pro aktivaci Copperu a zobrazení nové bitmapy.
-
-## Datové Struktury
-
-Pro lepší organizaci kódu používáme vlastní struktury:
-
-```c
-struct Fish {
-    struct Bob *bob; // Odkaz na grafický objekt
-    WORD x, y;       // Pozice
-    WORD dx;         // Rychlost a směr
-    WORD width;      // Šířka ryby
-};
-```
-
-## Odkazy na Studnici Moudrosti (Zdroje)
-
-Všechny znalosti pro tento projekt byly čerpány z legendárních svitků Amiga ROM Kernel Reference Manuals.
-
-*   [Amiga Developer Docs (Elowar)](http://amigadev.elowar.com/) - Hlavní brána k vědění.
-*   [Graphics Library](http://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_2._guide/node02E1.html) - Vše o `RastPort`, `BitMap`, `BltBitMap` a `UCopList`.
-*   [Intuition Library](http://amigadev.elowar.com/read/ADCD_2.1/Includes_and_Autodocs_3._guide/node0278.html) - Práce s obrazovkami (`OpenScreen`).
+*   `main.c`: Srdce programu a hlavní smyčka.
+*   `fish.c/h`: Správa ryb, jejich inicializace a otáčení grafiky.
+*   `flocking.c/h`: Inteligence hejna a matematické výpočty pohybu.
+*   `more_copper.c/h`: Kouzlo hlubokomořského gradientu.
+*   `animtools/`: Systémové nástroje pro práci s Gels.
 
 ## Sestavení
 
-K sestavení projektu použijte kompilátor `vbcc` s následujícím příkazem:
+K sestavení tohoto velkolepého díla použijte kompilátor `vbcc`:
 
 ```bash
-vc +aos68k .\main.c animtools/animtools.c random.c more_copper.c flocking.c -o a.exe -lamiga
+vc +aos68k .\main.c more_copper.c flocking.c fish.c animtools/animtools.c random.c -o a.exe -lamiga
 ```
 
-## Rytířovy Postřehy a Budoucí Vylepšení
+## Rytířovy Postřehy
 
-Jako Ser Amík z Comodorie vidím v tomto projektu velký potenciál! Zde je pár nápadů na další questy:
+Tento projekt ukazuje, že i na klasickém hardware Amigy lze s trochou matematiky a rytířské trpělivosti vytvořit komplexní a živý svět. Nejdůležitějším ponaučením z tohoto questu bylo: **"Vždy si hlídej své 32-bitové registry při násobení souřadnic!"**
 
-1.  **Vylepšení Časování:** Implementovat delta-time časování pro konzistentní rychlost na všech procesorech.
-2.  **Inteligentnější Ryby:** Přidat hejnové chování (flocking) nebo reakci na myš.
-3.  **Dynamický Copper:** Animovat barvy v Copper listu pro efekt tekoucí vody nebo záblesků světla.
-
-Ať vás provází síla Guru Meditation (ale jen v dobrém)!
+Ať vaše ryby plují vesele a vaše Amiga nikdy nezažije Guru Meditation!
 
 *Sepsáno s úctou a úsměvem,*
 **Ser Amík z Comodorie**

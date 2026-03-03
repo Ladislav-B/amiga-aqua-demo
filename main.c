@@ -1,6 +1,6 @@
 /*
 Vykreslí podmořský svět s hlubokomořským gradientem a inteligentním hejnem ryb.
-vc +aos68k .\main.c more_copper.c flocking.c animtools/animtools.c random.c -o a.exe -lamiga
+vc +aos68k .\main.c more_copper.c flocking.c fish.c animtools/animtools.c random.c -o a.exe -lamiga
 */
 
 #include <proto/exec.h>
@@ -16,13 +16,11 @@ vc +aos68k .\main.c more_copper.c flocking.c animtools/animtools.c random.c -o a
 #include "background.h"
 #include "random.h"
 #include "bubble_sprite.h"
-#include "ryba1_sprite.h"
-#include "ryba2_sprite.h"
-#include "ryba3_sprite.h"
 #include "animtools/animtools.h"
 #include "animtools/animtools_proto.h"
 #include "more_copper.h"
 #include "flocking.h"
+#include "fish.h"
 
 struct IntuitionBase *IntuitionBase=NULL;
 struct DosBase *DosBase=NULL;
@@ -49,8 +47,7 @@ volatile struct Custom *custom_ptr = (struct Custom *)0xDFF000;
 #define NUM_BUBBLES 20
 struct Bubble { struct Bob *bob; WORD x, y, dy; } bubbles[NUM_BUBBLES];
 
-#define NUM_FISH 12
-struct Fish { struct Bob *bob; WORD x, y, dx, dy, width; } fish[NUM_FISH];
+struct Fish fish[NUM_FISH]; /* Definováno v fish.h */
 
 struct GelsInfo *gelsInfo;
 UWORD pens[]={~0};
@@ -101,62 +98,47 @@ int main(void) {
               bubbles[i].bob = makeBob(&bTemp); if (bubbles[i].bob) AddBob(bubbles[i].bob, &db->screen->RastPort);
             }
 
-            // --- Ryby (S inteligentním hejnem) ---
-            NEWBOB fTemp = { NULL, 0, 0, 0, 0x07, 0x08, OVERLAY, 0, SCREEN_DEPTH, 0, 0, 0, 0 };
-            for (int i=0; i<NUM_FISH; i++) {
-              int type = (i % 3);
-              fish[i].width = (type==0)?G61_WIDTH : (type==1)?G77_WIDTH : G88_WIDTH;
-              fish[i].x = BOUND_LEFT + randRange(BOUND_RIGHT - BOUND_LEFT - fish[i].width);
-              fish[i].y = BOUND_TOP + randRange(BOUND_BOTTOM - BOUND_TOP - 32);
-              fish[i].dx = (randRange(10) > 5) ? (1 + randRange(2)) : -(1 + randRange(2));
-              fish[i].dy = (randRange(10) > 5) ? 1 : -1;
-              
-              fTemp.nb_Image = (WORD *)((type==0)?g61_get_plane(1) : (type==1)?g77_get_plane(1) : g88_get_plane(1));
-              fTemp.nb_WordWidth = fish[i].width/16; 
-              fTemp.nb_LineHeight = (type==0)?G61_HEIGHT : (type==1)?G77_HEIGHT : G88_HEIGHT;
-              fTemp.nb_ImageDepth = (type==0)?G61_DEPTH : (type==1)?G77_DEPTH : G88_DEPTH;
-              fTemp.nb_X = fish[i].x; fTemp.nb_Y = fish[i].y;
-              fish[i].bob = makeBob(&fTemp); if (fish[i].bob) AddBob(fish[i].bob, &db->screen->RastPort);
+            // --- Ryby (S inteligentním hejnem a zrcadlením) ---
+            if (init_fish_squad(fish, &db->screen->RastPort)) {
+
+              // Prvotní aktivace Copperu a displaye
+              MakeScreen(db->screen); RethinkDisplay();
+
+              int front=0;
+              while ((*((volatile UBYTE *)0xbfe001) & 0x40)) {
+                int back = 1 - front;
+                struct RastPort rp; InitRastPort(&rp); rp.BitMap = db->bitmaps[back]; rp.GelsInfo = gelsInfo;
+
+                BltBitMap(db->bgBitMap, 0, 0, db->bitmaps[back], 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0xC0, 0xFF, NULL);
+                WaitBlit();
+
+                // 1. Bubliny
+                for (int j=0; j<NUM_BUBBLES; j++) {
+                  bubbles[j].y += bubbles[j].dy; bubbles[j].x += randRange(5)-2;
+                  if (bubbles[j].y < BOUND_TOP) { bubbles[j].y = BOUND_BOTTOM-5; bubbles[j].x = BOUND_LEFT + randRange(BOUND_RIGHT-BOUND_LEFT-BUBBLE_WIDTH); }
+                  bubbles[j].bob->BobVSprite->X = bubbles[j].x; bubbles[j].bob->BobVSprite->Y = bubbles[j].y;
+                }
+                
+                // 2. Hejno ryb
+                update_flocking(fish, NUM_FISH);
+                update_fish_orientation(fish); /* Kouzlo správného směru! */
+
+                SortGList(&db->screen->RastPort); DrawGList(&rp, &db->screen->ViewPort);
+                BltBitMap(db->bgBitMap, 0, 0, db->bitmaps[back], 0, 0, SCREEN_WIDTH, BOUND_TOP, 0xC0, 0xFF, NULL);
+                BltBitMap(db->bgBitMap, 0, BOUND_BOTTOM, db->bitmaps[back], 0, BOUND_BOTTOM, SCREEN_WIDTH, SCREEN_HEIGHT-BOUND_BOTTOM, 0xC0, 0xFF, NULL);
+                BltBitMap(db->bgBitMap, 0, BOUND_TOP, db->bitmaps[back], 0, BOUND_TOP, BOUND_LEFT, BOUND_BOTTOM - BOUND_TOP, 0xC0, 0xFF, NULL);
+                BltBitMap(db->bgBitMap, BOUND_RIGHT, BOUND_TOP, db->bitmaps[back], BOUND_RIGHT, BOUND_TOP, SCREEN_WIDTH - BOUND_RIGHT, BOUND_BOTTOM - BOUND_TOP, 0xC0, 0xFF, NULL);
+                WaitBlit();
+
+                WaitTOF();
+                db->screen->ViewPort.RasInfo->BitMap = db->bitmaps[back];
+                front = back;
+                ScrollVPort(&db->screen->ViewPort);
+              }
             }
 
-            // Prvotní aktivace Copperu
-            MakeScreen(db->screen); RethinkDisplay();
-
-            int front=0;
-            while ((*((volatile UBYTE *)0xbfe001) & 0x40)) {
-              int back = 1 - front;
-              struct RastPort rp; InitRastPort(&rp); rp.BitMap = db->bitmaps[back]; rp.GelsInfo = gelsInfo;
-
-              BltBitMap(db->bgBitMap, 0, 0, db->bitmaps[back], 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0xC0, 0xFF, NULL);
-              WaitBlit();
-
-              for (int j=0; j<NUM_BUBBLES; j++) {
-                bubbles[j].y += bubbles[j].dy; bubbles[j].x += randRange(5)-2;
-                if (bubbles[j].y < BOUND_TOP) { bubbles[j].y = BOUND_BOTTOM-5; bubbles[j].x = BOUND_LEFT + randRange(BOUND_RIGHT-BOUND_LEFT-BUBBLE_WIDTH); }
-                bubbles[j].bob->BobVSprite->X = bubbles[j].x; bubbles[j].bob->BobVSprite->Y = bubbles[j].y;
-              }
-              
-              /* Inteligentní pohyb hejna */
-              update_flocking(fish, NUM_FISH);
-              for (int j=0; j<NUM_FISH; j++) {
-                fish[j].bob->BobVSprite->X = fish[j].x; fish[j].bob->BobVSprite->Y = fish[j].y;
-              }
-
-              SortGList(&db->screen->RastPort); DrawGList(&rp, &db->screen->ViewPort);
-              BltBitMap(db->bgBitMap, 0, 0, db->bitmaps[back], 0, 0, SCREEN_WIDTH, BOUND_TOP, 0xC0, 0xFF, NULL);
-              BltBitMap(db->bgBitMap, 0, BOUND_BOTTOM, db->bitmaps[back], 0, BOUND_BOTTOM, SCREEN_WIDTH, SCREEN_HEIGHT-BOUND_BOTTOM, 0xC0, 0xFF, NULL);
-              BltBitMap(db->bgBitMap, 0, BOUND_TOP, db->bitmaps[back], 0, BOUND_TOP, BOUND_LEFT, BOUND_BOTTOM - BOUND_TOP, 0xC0, 0xFF, NULL);
-              BltBitMap(db->bgBitMap, BOUND_RIGHT, BOUND_TOP, db->bitmaps[back], BOUND_RIGHT, BOUND_TOP, SCREEN_WIDTH - BOUND_RIGHT, BOUND_BOTTOM - BOUND_TOP, 0xC0, 0xFF, NULL);
-              WaitBlit();
-
-              WaitTOF();
-              db->screen->ViewPort.RasInfo->BitMap = db->bitmaps[back];
-              front = back;
-              ScrollVPort(&db->screen->ViewPort);
-            }
-
-            for (int i=0; i<NUM_FISH; i++) { if (fish[i].bob) { RemBob(fish[i].bob); freeBob(fish[i].bob, SCREEN_DEPTH); } }
-            for (int i=0; i<NUM_BUBBLES; i++) { if (bubbles[i].bob) { RemBob(bubbles[i].bob); freeBob(bubbles[i].bob, SCREEN_DEPTH); } }
+            cleanup_fish_squad(fish);
+            for (int i = 0; i < NUM_BUBBLES; i++) { if (bubbles[i].bob) { RemBob(bubbles[i].bob); freeBob(bubbles[i].bob, SCREEN_DEPTH); } }
             cleanupGelSys(gelsInfo, &db->screen->RastPort);
             if (db->screen->ViewPort.UCopIns) { FreeVPortCopLists(&db->screen->ViewPort); FreeVec(db->screen->ViewPort.UCopIns); db->screen->ViewPort.UCopIns=NULL; }
           }
