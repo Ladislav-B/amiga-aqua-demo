@@ -88,7 +88,7 @@ Všechny znalosti pro tento projekt byly čerpány z legendárních svitků Amig
 K sestavení projektu použijte kompilátor `vbcc` s následujícím příkazem:
 
 ```bash
-vc +aos68k .\main.c more_copper.c animtools/animtools.c random.c -o a.exe -lamiga
+vc +aos68k .\main.c animtools/animtools.c random.c more_copper.c flocking.c -o a.exe -lamiga
 ```
 
 ## Rytířovy Postřehy a Budoucí Vylepšení

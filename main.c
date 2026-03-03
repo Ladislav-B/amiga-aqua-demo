@@ -1,6 +1,6 @@
 /*
-Vykreslí podmořský svět s hlubokomořským gradientem.
-vc +aos68k .\main.c more_copper.c animtools/animtools.c random.c -o a.exe -lamiga
+Vykreslí podmořský svět s hlubokomořským gradientem a inteligentním hejnem ryb.
+vc +aos68k .\main.c more_copper.c flocking.c animtools/animtools.c random.c -o a.exe -lamiga
 */
 
 #include <proto/exec.h>
@@ -22,6 +22,7 @@ vc +aos68k .\main.c more_copper.c animtools/animtools.c random.c -o a.exe -lamig
 #include "animtools/animtools.h"
 #include "animtools/animtools_proto.h"
 #include "more_copper.h"
+#include "flocking.h"
 
 struct IntuitionBase *IntuitionBase=NULL;
 struct DosBase *DosBase=NULL;
@@ -34,10 +35,6 @@ struct DoubleBuffer {
     int frame;
 } *db;
 
-/* 
- * Deklarace custom pro zbytek programu. 
- * V more_copper.c je deklarována jako objekt pro CMOVE makra.
- */
 volatile struct Custom *custom_ptr = (struct Custom *)0xDFF000;
 
 #define SCREEN_WIDTH  640
@@ -52,8 +49,8 @@ volatile struct Custom *custom_ptr = (struct Custom *)0xDFF000;
 #define NUM_BUBBLES 20
 struct Bubble { struct Bob *bob; WORD x, y, dy; } bubbles[NUM_BUBBLES];
 
-#define NUM_FISH 5
-struct Fish { struct Bob *bob; WORD x, y, dx, width; } fish[NUM_FISH];
+#define NUM_FISH 12
+struct Fish { struct Bob *bob; WORD x, y, dx, dy, width; } fish[NUM_FISH];
 
 struct GelsInfo *gelsInfo;
 UWORD pens[]={~0};
@@ -104,16 +101,19 @@ int main(void) {
               bubbles[i].bob = makeBob(&bTemp); if (bubbles[i].bob) AddBob(bubbles[i].bob, &db->screen->RastPort);
             }
 
-            // --- Ryby ---
+            // --- Ryby (S inteligentním hejnem) ---
             NEWBOB fTemp = { NULL, 0, 0, 0, 0x07, 0x08, OVERLAY, 0, SCREEN_DEPTH, 0, 0, 0, 0 };
             for (int i=0; i<NUM_FISH; i++) {
-              int type = (i<4) ? (i%2) : 2;
+              int type = (i % 3);
               fish[i].width = (type==0)?G61_WIDTH : (type==1)?G77_WIDTH : G88_WIDTH;
-              fish[i].x = (type<2)?(BOUND_LEFT + randRange(BOUND_RIGHT-BOUND_LEFT-fish[i].width)) : BOUND_LEFT;
+              fish[i].x = BOUND_LEFT + randRange(BOUND_RIGHT - BOUND_LEFT - fish[i].width);
               fish[i].y = BOUND_TOP + randRange(BOUND_BOTTOM - BOUND_TOP - 32);
-              fish[i].dx = (type<2)?(-(1 + randRange(4))) : (1 + randRange(4));
+              fish[i].dx = (randRange(10) > 5) ? (1 + randRange(2)) : -(1 + randRange(2));
+              fish[i].dy = (randRange(10) > 5) ? 1 : -1;
+              
               fTemp.nb_Image = (WORD *)((type==0)?g61_get_plane(1) : (type==1)?g77_get_plane(1) : g88_get_plane(1));
-              fTemp.nb_WordWidth = fish[i].width/16; fTemp.nb_LineHeight = (type==0)?G61_HEIGHT : (type==1)?G77_HEIGHT : G88_HEIGHT;
+              fTemp.nb_WordWidth = fish[i].width/16; 
+              fTemp.nb_LineHeight = (type==0)?G61_HEIGHT : (type==1)?G77_HEIGHT : G88_HEIGHT;
               fTemp.nb_ImageDepth = (type==0)?G61_DEPTH : (type==1)?G77_DEPTH : G88_DEPTH;
               fTemp.nb_X = fish[i].x; fTemp.nb_Y = fish[i].y;
               fish[i].bob = makeBob(&fTemp); if (fish[i].bob) AddBob(fish[i].bob, &db->screen->RastPort);
@@ -135,24 +135,23 @@ int main(void) {
                 if (bubbles[j].y < BOUND_TOP) { bubbles[j].y = BOUND_BOTTOM-5; bubbles[j].x = BOUND_LEFT + randRange(BOUND_RIGHT-BOUND_LEFT-BUBBLE_WIDTH); }
                 bubbles[j].bob->BobVSprite->X = bubbles[j].x; bubbles[j].bob->BobVSprite->Y = bubbles[j].y;
               }
+              
+              /* Inteligentní pohyb hejna */
+              update_flocking(fish, NUM_FISH);
               for (int j=0; j<NUM_FISH; j++) {
-                fish[j].x += fish[j].dx;
-                if (fish[j].dx < 0) { if (fish[j].x < BOUND_LEFT-fish[j].width) { fish[j].x=BOUND_RIGHT; fish[j].y=BOUND_TOP+randRange(BOUND_BOTTOM-BOUND_TOP-32); } }
-                else { if (fish[j].x > BOUND_RIGHT) { fish[j].x=BOUND_LEFT-fish[j].width; fish[j].y=BOUND_TOP+randRange(BOUND_BOTTOM-BOUND_TOP-32); } }
                 fish[j].bob->BobVSprite->X = fish[j].x; fish[j].bob->BobVSprite->Y = fish[j].y;
               }
 
               SortGList(&db->screen->RastPort); DrawGList(&rp, &db->screen->ViewPort);
               BltBitMap(db->bgBitMap, 0, 0, db->bitmaps[back], 0, 0, SCREEN_WIDTH, BOUND_TOP, 0xC0, 0xFF, NULL);
               BltBitMap(db->bgBitMap, 0, BOUND_BOTTOM, db->bitmaps[back], 0, BOUND_BOTTOM, SCREEN_WIDTH, SCREEN_HEIGHT-BOUND_BOTTOM, 0xC0, 0xFF, NULL);
-              BltBitMap(db->bgBitMap, 0, BOUND_TOP, db->bitmaps[back], 0, BOUND_TOP, BOUND_LEFT, BOUND_BOTTOM-BOUND_TOP, 0xC0, 0xFF, NULL);
-              BltBitMap(db->bgBitMap, BOUND_RIGHT, BOUND_TOP, db->bitmaps[back], BOUND_RIGHT, BOUND_TOP, SCREEN_WIDTH-BOUND_RIGHT, BOUND_BOTTOM-BOUND_TOP, 0xC0, 0xFF, NULL);
+              BltBitMap(db->bgBitMap, 0, BOUND_TOP, db->bitmaps[back], 0, BOUND_TOP, BOUND_LEFT, BOUND_BOTTOM - BOUND_TOP, 0xC0, 0xFF, NULL);
+              BltBitMap(db->bgBitMap, BOUND_RIGHT, BOUND_TOP, db->bitmaps[back], BOUND_RIGHT, BOUND_TOP, SCREEN_WIDTH - BOUND_RIGHT, BOUND_BOTTOM - BOUND_TOP, 0xC0, 0xFF, NULL);
               WaitBlit();
 
               WaitTOF();
               db->screen->ViewPort.RasInfo->BitMap = db->bitmaps[back];
               front = back;
-              // Stabilní prohození BitMapy bez přestavování celého displeje
               ScrollVPort(&db->screen->ViewPort);
             }
 
